@@ -83,7 +83,7 @@ void *removeSong(void *arg) {
     return NULL;
 }
 
-//Função auxiliar. Imprime os comandos possíveis e ler qual foi escolhido.
+//Função auxiliar. Imprime os comandos possíveis e lê qual foi escolhido.
 string getUserInput() {
     string userInput;
     
