@@ -1,11 +1,11 @@
-#include <bits/stdc++.h>
+//#include <bits/stdc++.h>
+#include <vector>
 #include <ncurses.h>
 #include <pthread.h>
 #include <unistd.h>
 #include <iostream>
 #define endl '\n'
 using namespace std;
-
 
 
 //
@@ -149,92 +149,150 @@ class Songs
 {   public:
     string title;
     string singer;
-    int duration;
+    string duration;
 };
 
 /*Variáveis globais do código. songQueue é um vector que armazena as músicas adicionadas pelo usuário.*/
 vector<Songs> songQueue;
 int numLines, numColumns, musicaPosition, artistaPosition, duracaoPosition;
+int yWinQueue, xWinQueue, linesWinQueue, columnsWinQueue;
+WINDOW *winQueue, *winPlaying, *winActions;
 
+/*Funções auxiliares*/
+void refreshWinQueue() {
+    for (int i = 0; i < songQueue.size(); i++) {
+        string str = to_string(i);
+        const char *c = str.c_str();
+        mvwprintw(winQueue, 2 + i, 3, c);
+        
+        const char *d = songQueue[i].title.c_str();
+        mvwprintw(winQueue, 2 + i, musicaPosition, d);
+        
+        const char *e = songQueue[i].singer.c_str();
+        mvwprintw(winQueue, 2 + i, artistaPosition, e);
+        
+        const char *f = songQueue[i].duration.c_str();
+        mvwprintw(winQueue, 2 + i, duracaoPosition, f);
+        
+        wrefresh(winQueue);
+    }
+}
+
+void drawWinActionsBox(bool complete) {
+    if (complete) {
+        wclear(winActions);
+        box(winActions, '*', '*');
+        mvwprintw(winActions, 0, 3, "COMANDOS");
+        mvwprintw(winActions, 1, 3, "[A]adicionar");
+        mvwprintw(winActions, 1, columnsWinQueue * 0.2 + 3, "[R]remover");
+        mvwprintw(winActions, 1, columnsWinQueue * 0.4 + 3, "[P]play");
+        mvwprintw(winActions, 1, columnsWinQueue * 0.6 + 3, "[S]pause");
+        mvwprintw(winActions, 1, columnsWinQueue * 0.8 + 3, "[N]proxima");
+        wrefresh(winActions);
+    } else {
+        wclear(winActions);
+        box(winActions, '*', '*');
+        mvwprintw(winActions, 0, 3, "COMANDOS");
+    }
+}
+
+
+
+/*Funções principais*/
+void addSong() {
+    char input[100];
+    Songs song;
+    
+    drawWinActionsBox(false);
+    mvwprintw(winActions, 1, 1, "Digite o nome da música: ");
+    wrefresh(winActions);
+    wmove(winActions, 1, 26);
+    wgetstr(winActions, input);
+    song.title = input;
+    
+    drawWinActionsBox(false);
+    mvwprintw(winActions, 1, 1, "Digite o nome do artista: ");
+    wrefresh(winActions);
+    wmove(winActions, 1, 27);
+    wgetstr(winActions, input);
+    song.singer = input;
+    
+    drawWinActionsBox(false);
+    mvwprintw(winActions, 1, 1, "Digite a duração da música: ");
+    wrefresh(winActions);
+    wmove(winActions, 1, 29);
+    wgetstr(winActions, input);
+    song.duration = input;
+    
+    songQueue.push_back(song);
+    refreshWinQueue();
+}
+
+void removeSong(int songIndex) {
+    
+}
 
 void setUserInterface() {
     initscr();
     
-    int yWinQueue, xWinQueue, linesWinQueue, columnsWinQueue;
+    
     int yWinPlaying, xWinPlaying, linesWinPlaying, columnsWinPlaying;
     int yWinActions, xWinActions, linesWinActions, columnsWinActions;
-
+    
     getmaxyx(stdscr, numLines, numColumns);
-
+    
     yWinQueue = 0;
     xWinQueue = 0;
     linesWinQueue = 0.75 * numLines;
     columnsWinQueue = numColumns;
-
+    
     yWinPlaying = (yWinQueue + linesWinQueue) + 2; //Pega a última posição y de winArtists e soma dois
     xWinPlaying = 0;
     linesWinPlaying = ((numLines * 0.25) - 2) / 2;
     columnsWinPlaying = numColumns;
-
+    
     yWinActions = (yWinPlaying + linesWinPlaying) + 1;
     xWinActions = 0;
     linesWinActions = 3;
     columnsWinActions = numColumns;
     
-    WINDOW *winQueue = newwin(linesWinQueue, columnsWinQueue, yWinQueue, xWinQueue);
-    WINDOW *winPlaying = newwin(linesWinPlaying, columnsWinPlaying, yWinPlaying, xWinPlaying);
-    WINDOW *winActions = newwin(linesWinActions, columnsWinActions, yWinActions, xWinActions);
+    winQueue = newwin(linesWinQueue, columnsWinQueue, yWinQueue, xWinQueue);
+    winPlaying = newwin(linesWinPlaying, columnsWinPlaying, yWinPlaying, xWinPlaying);
+    winActions = newwin(linesWinActions, columnsWinActions, yWinActions, xWinActions);
     refresh();
-
+    
     box(winQueue, '*', '*');
     /*Eu super tentei fazer algo bonito, mas não deu certo*/
     musicaPosition = columnsWinQueue/4;
     artistaPosition = columnsWinQueue * 0.5 + 7;
-    duracaoPosition = columnsWinQueue - 10;
+    duracaoPosition = columnsWinQueue - 20;
     mvwprintw(winQueue, 0, 3, "FILA");
     mvwprintw(winQueue, 1, 3, "#");
     mvwprintw(winQueue, 1, musicaPosition, "MUSICA");
     mvwprintw(winQueue, 1, artistaPosition, "ARTISTA");
-    mvwprintw(winQueue, 1, duracaoPosition - 10, "DURACAO");
+    mvwprintw(winQueue, 1, duracaoPosition, "DURACAO");
+    wrefresh(winQueue);
     
     box(winPlaying, '*', '*');
     mvwprintw(winPlaying, 0, 3, "MUSICA ATUAL");
-   
-    box(winActions, '*', '*');
-    mvwprintw(winActions, 0, 3, "COMANDOS");
-    mvwprintw(winActions, 1, 3, "[A]adicionar");
-    mvwprintw(winActions, 1, columnsWinQueue * 0.2 + 3, "[R]remover");
-    mvwprintw(winActions, 1, columnsWinQueue * 0.4 + 3, "[P]play");
-    mvwprintw(winActions, 1, columnsWinQueue * 0.6 + 3, "[S]pause");
-    mvwprintw(winActions, 1, columnsWinQueue * 0.8 + 3, "[N]proxima");
-    wmove(winActions, 1, 1);
-    
-    wrefresh(winQueue);
     wrefresh(winPlaying);
-    wrefresh(winActions);
     
+    drawWinActionsBox(true);
     
     while(true) {
+        cbreak();
         char userInput = wgetch(winActions);
-        
-        
         if (userInput == 'a') {
-            wclear(winActions);
-            box(winActions, '*', '*');
-            mvwprintw(winActions, 0, 3, "COMANDOS");
-            Songs song;
-            mvwprintw(winActions, 1, 1, "Digite o nome da música: ");
-            //Pq tá dando erro???????
-            char *input = (char *)malloc(20);
-            wgetnstr(stdscr, input, sizeof(input));
-            //mvwprintw(winQueue, 10, 19, input);
+            addSong();
+        } else if (userInput == 'b') {
+            drawWinActionsBox(false);
+            mvwprintw(winActions, 1, 1, "Digite o índice da música a ser removida: ");
+            userInput = wgetch(winActions);
+            int songIndex = (int)(userInput);
+            removeSong(songIndex);
         }
     }
-
-   
-
-    refresh();
-
+    
     getch();
     endwin();
 }
