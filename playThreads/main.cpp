@@ -17,12 +17,16 @@ class Songs
 
 /*Variáveis globais do código. songQueue é um vector que armazena as músicas adicionadas pelo usuário.*/
 vector<Songs> songQueue;
+bool anyoneCanRender = false;
+char userInput = 'x';
+pthread_mutex_t keyboardLock;
+
+/*Windows Variables*/
 int numLines, numColumns;
 int yWinQueue, xWinQueue, linesWinQueue, columnsWinQueue;
 int musicaPosition, artistaPosition, duracaoPosition;
 WINDOW *winQueue, *winPlaying, *winActions;
-
-
+bool isUISetted = false;
 
 
 /*Funções auxiliares*/
@@ -82,37 +86,6 @@ void drawWinQueueBox() {
 
 /*Funções principais*/
 
-void addSong() {
-    char input[100];
-    Songs song;
-    
-    drawWinActionsBox(false);
-    mvwprintw(winActions, 1, 1, "Digite o nome da música: ");
-    wrefresh(winActions);
-    wmove(winActions, 1, 26);
-    wgetstr(winActions, input);
-    song.title = input;
-    
-    drawWinActionsBox(false);
-    mvwprintw(winActions, 1, 1, "Digite o nome do artista: ");
-    wrefresh(winActions);
-    wmove(winActions, 1, 27);
-    wgetstr(winActions, input);
-    song.singer = input;
-    
-    drawWinActionsBox(false);
-    mvwprintw(winActions, 1, 1, "Digite a duração da música: ");
-    wrefresh(winActions);
-    wmove(winActions, 1, 29);
-    wgetstr(winActions, input);
-    song.duration = input;
-    
-    drawWinActionsBox(true);
-    songQueue.push_back(song);
-    addSongsToWinQueue();
-}
-
-
 void removeSong() {
     int songIndex;
     drawWinActionsBox(false);
@@ -134,6 +107,12 @@ void removeSong() {
 
 void setUserInterface() {
     initscr();
+    //cbreak();
+    //noecho();
+    //nonl();
+    //intrflush(stdscr, FALSE);
+    //keypad(stdscr, TRUE);
+
     int yWinPlaying, xWinPlaying, linesWinPlaying, columnsWinPlaying;
     int yWinActions, xWinActions, linesWinActions, columnsWinActions;
     
@@ -160,39 +139,110 @@ void setUserInterface() {
     refresh();
     
     drawWinQueueBox();
-    
+ 
     box(winPlaying, '*', '*');
     mvwprintw(winPlaying, 0, 3, "MUSICA ATUAL");
     wrefresh(winPlaying);
     
     drawWinActionsBox(true);
-    
-    while(true) {
-        noecho();
-        cbreak();
-        char userInput = wgetch(winActions);
-        echo();
-        if (userInput == 'a') {
-            addSong();
-        } else if (userInput == 'r') {
-            removeSong();
-        }
-    }
+    mvwin(winActions, 1, 1);
     
     getch();
-    endwin();
+    refresh();
+    //endwin();
 }
 
-void *userInterface(void *arg) {
+void addSong() {
+    while(pthread_mutex_trylock(&keyboardLock));
+    char input[100];
+    Songs song;
+    
+    drawWinActionsBox(false);
+    mvwprintw(winActions, 1, 1, "Digite o nome da música: ");
+    wrefresh(winActions);
+    wmove(winActions, 1, 26);
+    wgetstr(winActions, input);
+    song.title = input;
+    
+    drawWinActionsBox(false);
+    mvwprintw(winActions, 1, 1, "Digite o nome do artista: ");
+    wrefresh(winActions);
+    wmove(winActions, 1, 27);
+    wgetstr(winActions, input);
+    song.singer = input;
+    
+    drawWinActionsBox(false);
+    mvwprintw(winActions, 1, 1, "Digite a duração da música: ");
+    wrefresh(winActions);
+    wmove(winActions, 1, 29);
+    wgetstr(winActions, input);
+    song.duration = input;
+    
+    drawWinActionsBox(true);
+    songQueue.push_back(song);
+    pthread_mutex_unlock(&keyboardLock);
+}
+
+void processCommands() {
+    if (userInput == 'a') {
+            addSong();
+            wrefresh(winActions);
+            userInput = 'x';
+        } else if (userInput == 'r') {
+            //TODO
+        } else if (userInput == 'p') {
+            //TODO
+        } else if (userInput == 's') {
+            //TODO
+        }  else if (userInput == 'n') {
+            //TODO
+        }
+}
+
+void *watchUserKeyboard(void *arg) {
+      while(true) {
+        if (isUISetted) {
+        userInput = wgetch(winActions);
+        wrefresh(winActions);
+        processCommands();
+        }
+    }
+}
+
+void *renderUI(void *arg) {
     setUserInterface();
-    return NULL;
+    isUISetted = true;
+}
+
+void *getCommands(void *arg) {
+    while (true) {
+        if (userInput == 'a') {
+            addSong();
+            refresh();
+            userInput = 'x';
+        } else if (userInput == 'r') {
+            //TODO
+        } else if (userInput == 'p') {
+            //TODO
+        } else if (userInput == 's') {
+            //TODO
+        }  else if (userInput == 'n') {
+            //TODO
+        }
+    }
 }
 
 int main() {
-    pthread_t userInterfaceThread;
+    pthread_t renderUIThread;    
+    pthread_t watchUserKeyboardThread;
+    pthread_t getCommandsThread;
     
-    pthread_create(&userInterfaceThread, NULL, &userInterface, NULL);
-    pthread_join(userInterfaceThread, NULL);
+    pthread_create(&renderUIThread, NULL, &renderUI, NULL);
+    pthread_create(&watchUserKeyboardThread, NULL, &watchUserKeyboard, NULL);
+    //pthread_create(&getCommandsThread, NULL, &getCommands, NULL);
+    pthread_join(renderUIThread, NULL);
+    pthread_join(watchUserKeyboardThread, NULL);
+    //pthread_join(getCommandsThread, NULL);
     
     return 0;
 }
