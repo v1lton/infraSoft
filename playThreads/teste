@@ -1,0 +1,23 @@
+while (true)
+    {
+        if (!isPaused && songQueue.size() > 0 && playingSong < songQueue.size())
+        {
+            int totalSeconds = songQueue[playingSong].totalSeconds();
+            executionTime = totalSeconds / 50;
+            for (int i = 0; i < 50; i++)
+            {
+                if (!isPaused)
+                {
+                    mvwprintw(winPlaying, 2, 10 + i, "|");
+                    wrefresh(winPlaying);
+                    sleep(totalSeconds / 50); // quando fica pequeno dá um super bug
+                }
+            }
+            drawWinPlaying();
+            if (playingSong < songQueue.size())
+            {
+                playingSong++;
+            }
+            //parar e voltar se você pausar
+        }
+    }
