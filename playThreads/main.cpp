@@ -15,8 +15,8 @@ struct Songs
     int minutes;
     int seconds;
 
-    int totalSeconds() 
-    { 
+    int totalSeconds()
+    {
         return minutes * 60 + seconds;
     }
 };
@@ -33,14 +33,17 @@ bool isUISetted = false;
 int songDuration;
 bool isPaused = false;
 int executionTime = 0;
+bool isShuffleMode = false;
+bool isToRenderUI = false;
 
 /*Vector onde as músicas estão armazenadas*/
 vector<Songs> songQueue;
 
 /*Mutexes*/
-pthread_mutex_t mutexQueue = PTHREAD_MUTEX_INITIALIZER; //Mutex para fila
+pthread_mutex_t mutexQueue = PTHREAD_MUTEX_INITIALIZER;         //Mutex para fila
 pthread_mutex_t mutexExecutionTime = PTHREAD_MUTEX_INITIALIZER; //Mutex para o tempo de execução da música que está sendo reproduzida
-pthread_mutex_t mutexIsPaused = PTHREAD_MUTEX_INITIALIZER; //Mutex para o estado de play/pause da faixa sendo reproduzida
+pthread_mutex_t mutexIsPaused = PTHREAD_MUTEX_INITIALIZER;      //Mutex para o estado de play/pause da faixa sendo reproduzida
+pthread_mutex_t mutexIsToRenderUI = PTHREAD_MUTEX_INITIALIZER;  //Mutex para renderizar a UI
 
 /*Signals*/
 pthread_cond_t UI_SIGNAL = PTHREAD_COND_INITIALIZER; //sinal para indicar atualização na UI
@@ -63,10 +66,19 @@ void drawWinActionsBox(bool complete)
         box(winActions, '*', '*');
         mvwprintw(winActions, 0, 3, "COMANDOS");
         mvwprintw(winActions, 1, 3, "[A]adicionar");
-        mvwprintw(winActions, 1, columnsWinQueue * 0.2 + 3, "[R]remover");
-        mvwprintw(winActions, 1, columnsWinQueue * 0.4 + 3, "[P]play");
-        mvwprintw(winActions, 1, columnsWinQueue * 0.6 + 3, "[S]pause");
-        mvwprintw(winActions, 1, columnsWinQueue * 0.8 + 3, "[N]proxima");
+        mvwprintw(winActions, 1, columnsWinQueue * 0.14 + 3, "[R]remover");
+        mvwprintw(winActions, 1, columnsWinQueue * 0.28 + 3, "[P]play");
+        mvwprintw(winActions, 1, columnsWinQueue * 0.42 + 3, "[S]pause");
+        mvwprintw(winActions, 1, columnsWinQueue * 0.56 + 3, "[N]proxima");
+        mvwprintw(winActions, 1, columnsWinQueue * 0.84 + 18, "[Q]fechar");
+        if (isShuffleMode) 
+        {
+            mvwprintw(winActions, 1, columnsWinQueue * 0.70 + 3, "[K]sequencial");
+        } 
+        else
+        {
+             mvwprintw(winActions, 1, columnsWinQueue * 0.70 + 3, "[K]aleatorio");
+        }
         wrefresh(winActions);
     }
     else
@@ -94,23 +106,28 @@ void drawWinQueueBox()
 }
 
 /*Funções que ajudam ao funcionamento da reprodução das faixas*/
-void playSong() { //Play na execução da faixa
-    while(pthread_mutex_trylock(&mutexIsPaused) == 0); //Trava modificação no bool isPaused
+void playSong()
+{ //Play na execução da faixa
+    while (pthread_mutex_trylock(&mutexIsPaused) == 0)
+        ; //Trava modificação no bool isPaused
     isPaused = false;
     pthread_mutex_unlock(&mutexIsPaused); //Libera isPaused para modificações
 }
 
-void pauseSong() { // Pause na execução da faixa
-    while(pthread_mutex_trylock(&mutexIsPaused) == 0); //Trava modificação no bool isPaused
+void pauseSong()
+{ // Pause na execução da faixa
+    while (pthread_mutex_trylock(&mutexIsPaused) == 0)
+        ; //Trava modificação no bool isPaused
     isPaused = true;
     pthread_mutex_unlock(&mutexIsPaused); //Libera isPaused para modificações
 }
 
-void changeActualMusic() { //Muda o nome da música que está sendo exibida na window winPlaying
+void changeActualMusic()
+{ //Muda o nome da música que está sendo exibida na window winPlaying
     drawWinPlayingBox();
     const char *title = songQueue.at(0).title.c_str();
     mvwprintw(winPlaying, 1, 3, title); //printa o título da música disponível para ser reproduzida
-    
+
     const char *singer = songQueue.at(0).singer.c_str();
     mvwprintw(winPlaying, 2, 3, singer); //printa o artista da música disponível para ser reproduzida
 
@@ -138,15 +155,15 @@ void addSongsToWinQueue() //Adiciona as músicas que estão no vector songsQueue
     }
     wrefresh(winQueue);
 
-    if (!songQueue.empty()) { //Coloca a música disponível a ser tocada como a música 0
+    if (!songQueue.empty())
+    { //Coloca a música disponível a ser tocada como a música 0
         changeActualMusic();
     }
-
 }
 
 void addSong() //Pede informações sobre a música nova a ser adicionada na songsQueue
 {
-   
+
     char input[100];
     Songs song;
 
@@ -176,10 +193,12 @@ void addSong() //Pede informações sobre a música nova a ser adicionada na son
     wmove(winActions, 1, 31);
     wscanw(winActions, "%d", &song.seconds);
 
-    drawWinActionsBox(true);
-
-    while (pthread_mutex_trylock(&mutexQueue) == 0); //bloqueia o acesso a modifição em songQueue
-    while (pthread_mutex_trylock(&mutexIsPaused) == 0); //bloqueia o acesso a modifição em isPaused
+    while (pthread_mutex_trylock(&mutexQueue) == 0)
+        ; //bloqueia o acesso a modifição em songQueue
+    while (pthread_mutex_trylock(&mutexIsPaused) == 0)
+        ; //bloqueia o acesso a modifição em isPaused
+    while (pthread_mutex_trylock(&mutexIsToRenderUI) == 0)
+        ;
 
     songQueue.push_back(song);
     if (songQueue.size() == 1) //para dar play na faixa disponível somente se a última música adicionada for a primeira disponível a execução
@@ -187,14 +206,18 @@ void addSong() //Pede informações sobre a música nova a ser adicionada na son
         isPaused = false;
     }
 
-    pthread_cond_signal(&UI_SIGNAL); //envia sinal para atualizar a UI
-    pthread_mutex_unlock(&mutexQueue); //libera o mutex de modificação a songQueue
-    pthread_mutex_unlock(&mutexIsPaused);//libera o mutex de modificação a isPaused
+    isToRenderUI = true;
+
+    pthread_cond_signal(&UI_SIGNAL);      //envia sinal para atualizar a UI
+    pthread_mutex_unlock(&mutexQueue);    //libera o mutex de modificação a songQueue
+    pthread_mutex_unlock(&mutexIsPaused); //libera o mutex de modificação a isPaused
+    pthread_mutex_unlock(&mutexIsToRenderUI);
 }
 
 void removeSong() //Remove uma faixa de songQueue
 {
-    while (pthread_mutex_trylock(&mutexQueue) == 0); //bloqueia o acesso a modifição em songQueue
+    while (pthread_mutex_trylock(&mutexQueue) == 0)
+        ; //bloqueia o acesso a modifição em songQueue
     int songIndex;
     drawWinActionsBox(false);
     mvwprintw(winActions, 1, 1, "Digite o índice da música a ser removida: ");
@@ -202,45 +225,55 @@ void removeSong() //Remove uma faixa de songQueue
     wscanw(winActions, "%d", &songIndex);
     wrefresh(winActions);
 
-    if (songIndex > songQueue.size() || songIndex <= 0)
-    {
-        //Não faz nenhuma ação nesse caso
-    }
-    else
+    if (songIndex <= songQueue.size() && songIndex > 0)
     {
         songIndex--;
         songQueue.erase(songQueue.begin() + songIndex); //retira a música da posição indicada pelo usuário
     }
 
-    drawWinActionsBox(true);
+    while (pthread_mutex_trylock(&mutexIsToRenderUI) == 0)
+        ;
+
+    isToRenderUI = true;
+
     pthread_cond_signal(&UI_SIGNAL); //sinaliza modificação na UI
+    pthread_mutex_unlock(&mutexIsToRenderUI);
     pthread_mutex_unlock(&mutexQueue); //libera o mutex de modificação em songQueue
 }
 
 void nextSong() //avança para a próxima música
 {
-    while (pthread_mutex_trylock(&mutexQueue) == 0); //bloqueia o acesso a modificação em songQueue
-    while (pthread_mutex_trylock(&mutexExecutionTime) == 0); //bloqueia o acesso a modificação em executionTime
+    while (pthread_mutex_trylock(&mutexQueue) == 0)
+        ; //bloqueia o acesso a modificação em songQueue
+    while (pthread_mutex_trylock(&mutexExecutionTime) == 0)
+        ; //bloqueia o acesso a modificação em executionTime
     if (!songQueue.empty())
     {
         executionTime = 0;
         songQueue = vector<Songs>(songQueue.begin() + 1, songQueue.end());
     }
 
+    while (pthread_mutex_trylock(&mutexIsToRenderUI) == 0)
+        ;
+
+    isToRenderUI = true;
+
     pthread_cond_signal(&UI_SIGNAL); //sinaliza modificação na UI
-    pthread_mutex_unlock(&mutexQueue); //libera o mutex de modificação em songQueue
+    pthread_mutex_unlock(&mutexIsToRenderUI);
+    pthread_mutex_unlock(&mutexQueue);         //libera o mutex de modificação em songQueue
     pthread_mutex_unlock(&mutexExecutionTime); //libera o mutex de modificação em executionTime
 }
 
 void progressionBar() //realiza a progressão da barra de execução da música
 {
-    if (executionTime == 0) {
+    if (executionTime == 0)
+    {
         drawWinPlayingBox();
     }
 
-    int totalSeconds = songQueue.empty() ? 0: songQueue.at(0).totalSeconds(); //pega o tempo total da música que está liberada para ser executada
+    int totalSeconds = songQueue.empty() ? 0 : songQueue.at(0).totalSeconds(); //pega o tempo total da música que está liberada para ser executada
 
-    mvwhline(winPlaying, 1, 30, ACS_CKBOARD, int(((float) executionTime / totalSeconds ) * (numColumns - 20))); //desenha a linha da faixa disponível para ser executada
+    mvwhline(winPlaying, 1, 30, ACS_CKBOARD, int(((float)executionTime / totalSeconds) * (numColumns - 20))); //desenha a linha da faixa disponível para ser executada
     wrefresh(winPlaying);
 }
 
@@ -259,7 +292,7 @@ void setUserInterface() //relação com ncurses. Desenha a interface para o usu�
         linesWinQueue = 0.75 * numLines;
         columnsWinQueue = numColumns;
 
-        yWinPlaying = (yWinQueue + linesWinQueue) + 2; 
+        yWinPlaying = (yWinQueue + linesWinQueue) + 2;
         xWinPlaying = 0;
         linesWinPlaying = 4;
         columnsWinPlaying = numColumns;
@@ -290,34 +323,59 @@ void *userInterface(void *arg) //responsável por montar e atualizar a UI
 
     while (true)
     {
-        pthread_cond_wait(&UI_SIGNAL, &mutexQueue); //fica esperando pelo sinal de atualização
+
+        while (!isToRenderUI)
+        {
+            pthread_cond_wait(&UI_SIGNAL, &mutexIsToRenderUI); //fica esperando pelo sinal de atualização
+        }
 
         addSongsToWinQueue(); //adiciona músicas à fila na window WinQueue
-        progressionBar(); //responsável pela atualização da barra de execução
+        progressionBar();     //responsável pela atualização da barra de execução
+        isToRenderUI = false;
     }
 }
 
-void *playingSongTime(void *arg) //responsável pelo tempo de execução da música
+void *playingTime(void *arg)
 {
     while (true)
     {
-        while (pthread_mutex_trylock(&mutexExecutionTime) == 0); //bloqueia modificação em executionTime
-        if (!isPaused && !songQueue.empty() && executionTime < songQueue.at(0).totalSeconds()) 
+        while (pthread_mutex_trylock(&mutexExecutionTime) == 0)
+            ; //bloqueia modificação em executionTime
+
+        if (!songQueue.empty() && !isPaused) //checa se a lista de sons não está vazia e se não a música não está pausada
         {
-            executionTime++;
+            executionTime++; //precisa atualizar a UI
         }
-        else if (!songQueue.empty() && executionTime == songQueue.at(0).totalSeconds())
-        {
-            nextSong();
-        }
-        else if (songQueue.empty())
-        {
-            executionTime = 0;
-            isPaused = true;
-        }
+
         sleep(1);
-        pthread_cond_signal(&UI_SIGNAL); //sinaliza a UI para modificação
-        pthread_mutex_unlock(&mutexExecutionTime); //libera modificação em executionTime
+
+        while (pthread_mutex_trylock(&mutexIsToRenderUI) == 0)
+            ;
+
+        isToRenderUI = true;
+
+        pthread_mutex_unlock(&mutexIsToRenderUI);
+        pthread_cond_signal(&UI_SIGNAL);
+        pthread_mutex_unlock(&mutexExecutionTime); //desbloqueia modificação em executionTime
+    }
+}
+
+void *changeSong(void *arg)
+{
+    while (true)
+    {
+        if (!songQueue.empty() && executionTime == songQueue.at(0).totalSeconds())
+        {   
+            if (!isShuffleMode) 
+            {
+                nextSong();
+            }
+            while (pthread_mutex_trylock(&mutexIsToRenderUI) == 0)
+                ;
+            isToRenderUI = true;
+            pthread_mutex_unlock(&mutexIsToRenderUI);
+            pthread_cond_signal(&UI_SIGNAL);
+        }
     }
 }
 
@@ -336,21 +394,31 @@ void *watchUserKeyboard(void *arg) //responsável por observar os comandos escol
         }
         else if (userInput == 's' || userInput == 'S')
         {
-            pauseSong(); 
-            drawWinActionsBox(true);
+            pauseSong();
         }
         else if (userInput == 'p' || userInput == 'P')
         {
             playSong();
-            drawWinActionsBox(true);
         }
         else if (userInput == 'n' || userInput == 'N')
         {
             nextSong();
-            drawWinActionsBox(true);
-        } else {
+        }
+        else if (userInput == 'k' || userInput == 'K')
+        {
+            isShuffleMode = !isShuffleMode;
+        }
+        else if (userInput == 'q' || userInput == 'Q')
+        {
+            endwin();
+            exit(0);
+        }
+        else
+        {
             drawWinActionsBox(true);
         }
+
+        drawWinActionsBox(true);
     }
 }
 
@@ -358,18 +426,21 @@ int main()
 {
     /*Declaração das threads*/
     pthread_t userInterfaceThread;
-    pthread_t playingSongTimeThread;
     pthread_t watchUserKeyboardThread;
+    pthread_t changeSongThread;
+    pthread_t playingTimeThread;
 
     /*Criação das threads*/
     pthread_create(&userInterfaceThread, NULL, &userInterface, NULL);
-    pthread_create(&playingSongTimeThread, NULL, &playingSongTime, NULL);
     pthread_create(&watchUserKeyboardThread, NULL, &watchUserKeyboard, NULL);
+    pthread_create(&changeSongThread, NULL, &changeSong, NULL);
+    pthread_create(&playingTimeThread, NULL, &playingTime, NULL);
 
     /*A main precisa esperar até concluir a execução das threads*/
     pthread_join(userInterfaceThread, NULL);
-    pthread_join(playingSongTimeThread, NULL);
     pthread_join(watchUserKeyboardThread, NULL);
+    pthread_join(changeSongThread, NULL);
+    pthread_join(playingTimeThread, NULL);
 
     return 0;
 }
