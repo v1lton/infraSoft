@@ -14,6 +14,7 @@ struct Songs
     string singer;
     int minutes;
     int seconds;
+    bool wasPlayed = false;
 
     int totalSeconds()
     {
@@ -29,15 +30,18 @@ int yWinQueue, xWinQueue, linesWinQueue, columnsWinQueue;
 int musicaPosition, artistaPosition, duracaoPosition;
 
 /*Váriaveis de estado*/
-bool isUISetted = false;
+int actualMusic = -1; //música atual. -1 significa que não tem música para tocar
 int songDuration;
-bool isPaused = false;
 int executionTime = 0;
 bool isShuffleMode = false;
 bool isToRenderUI = false;
+bool isPaused = false;
+bool isUISetted = false;
+
 
 /*Vector onde as músicas estão armazenadas*/
 vector<Songs> songQueue;
+vector<bool> wasTheSongPlayed;
 
 /*Mutexes*/
 pthread_mutex_t mutexQueue = PTHREAD_MUTEX_INITIALIZER;         //Mutex para fila
@@ -125,12 +129,14 @@ void pauseSong()
 void changeActualMusic()
 { //Muda o nome da música que está sendo exibida na window winPlaying
     drawWinPlayingBox();
-    const char *title = songQueue.at(0).title.c_str();
-    mvwprintw(winPlaying, 1, 3, title); //printa o título da música disponível para ser reproduzida
+    if (actualMusic != -1)
+    {
+        const char *title = songQueue.at(actualMusic).title.c_str();
+        mvwprintw(winPlaying, 1, 3, title); //printa o título da música disponível para ser reproduzida
 
-    const char *singer = songQueue.at(0).singer.c_str();
-    mvwprintw(winPlaying, 2, 3, singer); //printa o artista da música disponível para ser reproduzida
-
+        const char *singer = songQueue.at(actualMusic).singer.c_str();
+        mvwprintw(winPlaying, 2, 3, singer); //printa o artista da música disponível para ser reproduzida
+    }
     wrefresh(winPlaying);
 }
 
@@ -204,6 +210,8 @@ void addSong() //Pede informações sobre a música nova a ser adicionada na son
     if (songQueue.size() == 1) //para dar play na faixa disponível somente se a última música adicionada for a primeira disponível a execução
     {
         isPaused = false;
+        actualMusic = 0;
+        songQueue.at(actualMusic).wasPlayed = true;
     }
 
     isToRenderUI = true;
@@ -247,10 +255,17 @@ void nextSong() //avança para a próxima música
         ; //bloqueia o acesso a modificação em songQueue
     while (pthread_mutex_trylock(&mutexExecutionTime) == 0)
         ; //bloqueia o acesso a modificação em executionTime
-    if (!songQueue.empty())
+    if (actualMusic < (songQueue.size() - 1) && actualMusic != -1)
     {
+        actualMusic++;
+        songQueue.at(actualMusic).wasPlayed = true;
         executionTime = 0;
-        songQueue = vector<Songs>(songQueue.begin() + 1, songQueue.end());
+        //songQueue = vector<Songs>(songQueue.begin() + 1, songQueue.end());
+    }
+    else //tocou todas as músicas
+    {
+        actualMusic = -1; //indica que já tocou todas as músicas
+        executionTime = 0;
     }
 
     while (pthread_mutex_trylock(&mutexIsToRenderUI) == 0)
@@ -266,12 +281,17 @@ void nextSong() //avança para a próxima música
 
 void progressionBar() //realiza a progressão da barra de execução da música
 {
+    int totalSeconds = 1;
+
     if (executionTime == 0)
     {
         drawWinPlayingBox();
     }
 
-    int totalSeconds = songQueue.empty() ? 0 : songQueue.at(0).totalSeconds(); //pega o tempo total da música que está liberada para ser executada
+    if (actualMusic != -1) 
+    {
+        totalSeconds = songQueue.empty() ? 0 : songQueue.at(actualMusic).totalSeconds(); //pega o tempo total da música que está liberada para ser executada
+    }
 
     mvwhline(winPlaying, 1, 30, ACS_CKBOARD, int(((float)executionTime / totalSeconds) * (numColumns - 20))); //desenha a linha da faixa disponível para ser executada
     wrefresh(winPlaying);
@@ -342,7 +362,7 @@ void *playingTime(void *arg)
         while (pthread_mutex_trylock(&mutexExecutionTime) == 0)
             ; //bloqueia modificação em executionTime
 
-        if (!songQueue.empty() && !isPaused) //checa se a lista de sons não está vazia e se não a música não está pausada
+        if (!songQueue.empty() && !isPaused && actualMusic != -1) //checa se a lista de sons não está vazia e se não a música não está pausada
         {
             executionTime++; //precisa atualizar a UI
         }
@@ -364,7 +384,7 @@ void *changeSong(void *arg)
 {
     while (true)
     {
-        if (!songQueue.empty() && executionTime == songQueue.at(0).totalSeconds())
+        if (actualMusic != -1 && executionTime == songQueue.at(actualMusic).totalSeconds())
         {   
             if (!isShuffleMode) 
             {
