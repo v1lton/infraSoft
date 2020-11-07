@@ -165,6 +165,10 @@ void addSongsToWinQueue() //Adiciona as músicas que estão no vector songsQueue
     { //Coloca a música disponível a ser tocada como a música 0
         changeActualMusic();
     }
+    else
+    {
+        changeActualMusic();
+    }
 }
 
 void addSong() //Pede informações sobre a música nova a ser adicionada na songsQueue
@@ -222,10 +226,25 @@ void addSong() //Pede informações sobre a música nova a ser adicionada na son
     pthread_mutex_unlock(&mutexIsToRenderUI);
 }
 
+void changePlayingMode()
+{
+    if (isShuffleMode) 
+    {
+        for (int i = actualMusic + 1; i < songQueue.size(); i++) //faz com que na mudança aleatório -> sequencial as próximas à música atual toque.
+        {
+            songQueue.at(i).wasPlayed = false;
+        }
+    }
+
+    isShuffleMode = !isShuffleMode;
+}
+
 void removeSong() //Remove uma faixa de songQueue
 {
-    while (pthread_mutex_trylock(&mutexQueue) == 0)
-        ; //bloqueia o acesso a modifição em songQueue
+    while (pthread_mutex_trylock(&mutexQueue) == 0); //bloqueia o acesso a modifição em songQueue
+    while (pthread_mutex_trylock(&mutexIsPaused) == 0);
+    while (pthread_mutex_trylock(&mutexIsToRenderUI) == 0);
+    
     int songIndex;
     drawWinActionsBox(false);
     mvwprintw(winActions, 1, 1, "Digite o índice da música a ser removida: ");
@@ -239,8 +258,12 @@ void removeSong() //Remove uma faixa de songQueue
         songQueue.erase(songQueue.begin() + songIndex); //retira a música da posição indicada pelo usuário
     }
 
-    while (pthread_mutex_trylock(&mutexIsToRenderUI) == 0)
-        ;
+    if (songQueue.empty())
+    {
+        actualMusic = -1;
+        isPaused = true;
+        executionTime = 0;
+    }
 
     isToRenderUI = true;
 
@@ -249,12 +272,16 @@ void removeSong() //Remove uma faixa de songQueue
     pthread_mutex_unlock(&mutexQueue); //libera o mutex de modificação em songQueue
 }
 
-void nextSong() //avança para a próxima música
+void nextSongSequential() //avança para a próxima música de maneira sequencial
 {
     while (pthread_mutex_trylock(&mutexQueue) == 0)
         ; //bloqueia o acesso a modificação em songQueue
     while (pthread_mutex_trylock(&mutexExecutionTime) == 0)
         ; //bloqueia o acesso a modificação em executionTime
+    while (pthread_mutex_trylock(&mutexIsToRenderUI) == 0);
+    while (pthread_mutex_trylock(&mutexIsToRenderUI) == 0)
+        ;
+
     if (actualMusic < (songQueue.size() - 1) && actualMusic != -1)
     {
         actualMusic++;
@@ -268,15 +295,59 @@ void nextSong() //avança para a próxima música
         executionTime = 0;
     }
 
-    while (pthread_mutex_trylock(&mutexIsToRenderUI) == 0)
-        ;
-
     isToRenderUI = true;
 
     pthread_cond_signal(&UI_SIGNAL); //sinaliza modificação na UI
     pthread_mutex_unlock(&mutexIsToRenderUI);
     pthread_mutex_unlock(&mutexQueue);         //libera o mutex de modificação em songQueue
     pthread_mutex_unlock(&mutexExecutionTime); //libera o mutex de modificação em executionTime
+}
+
+int findNextAvailableSound(int index) {
+    int auxCount = 0;
+    index++;
+    while (auxCount < songQueue.size())
+    {
+        if (!songQueue.at(index).wasPlayed)
+        {
+            return index;
+        } 
+        else 
+        {
+            auxCount++;
+            index = (index + 1) % songQueue.size();
+        }
+    }
+    return -1;
+}
+
+void nextSongShuffle() //avança para a próxima música de maneira aleatória
+{
+    //if (quantidadeDeMusicasTocadas < songQueue.size())
+    while (pthread_mutex_trylock(&mutexQueue) == 0); //bloqueia o acesso a modificação em songQueue
+    while (pthread_mutex_trylock(&mutexExecutionTime) == 0); //bloqueia o acesso a modificação em executionTime
+    while (pthread_mutex_trylock(&mutexIsToRenderUI) == 0);
+
+    int nextIndexSong = rand() % songQueue.size();
+    if (songQueue.at(nextIndexSong).wasPlayed)
+    {
+        nextIndexSong = findNextAvailableSound(nextIndexSong);
+    }
+
+    actualMusic = nextIndexSong;
+    executionTime = 0;
+
+    if (actualMusic != -1)
+    {
+        songQueue.at(actualMusic).wasPlayed = true;
+    }
+
+    isToRenderUI = true;
+
+    pthread_mutex_unlock(&mutexIsToRenderUI);
+    pthread_mutex_unlock(&mutexQueue);         //libera o mutex de modificação em songQueue
+    pthread_mutex_unlock(&mutexExecutionTime);
+    pthread_cond_signal(&UI_SIGNAL); //sinaliza modificação na UI
 }
 
 void progressionBar() //realiza a progressão da barra de execução da música
@@ -359,8 +430,7 @@ void *playingTime(void *arg)
 {
     while (true)
     {
-        while (pthread_mutex_trylock(&mutexExecutionTime) == 0)
-            ; //bloqueia modificação em executionTime
+        while (pthread_mutex_trylock(&mutexExecutionTime) == 0); //bloqueia modificação em executionTime
 
         if (!songQueue.empty() && !isPaused && actualMusic != -1) //checa se a lista de sons não está vazia e se não a música não está pausada
         {
@@ -382,14 +452,19 @@ void *playingTime(void *arg)
 
 void *changeSong(void *arg)
 {
-    while (true)
+    while (true) //??Checar se já foram todas tocadas??? ???Teria que mudar o número quando passasse de aleatório para não aleatório né bicha????
     {
-        if (actualMusic != -1 && executionTime == songQueue.at(actualMusic).totalSeconds())
+        if (actualMusic != -1 && !songQueue.empty() && executionTime == songQueue.at(actualMusic).totalSeconds())
         {   
             if (!isShuffleMode) 
             {
-                nextSong();
+                nextSongSequential();
             }
+            else
+            {
+                nextSongShuffle();
+            }
+            
             while (pthread_mutex_trylock(&mutexIsToRenderUI) == 0)
                 ;
             isToRenderUI = true;
@@ -422,11 +497,20 @@ void *watchUserKeyboard(void *arg) //responsável por observar os comandos escol
         }
         else if (userInput == 'n' || userInput == 'N')
         {
-            nextSong();
+            if (isShuffleMode)
+            {
+                nextSongShuffle();
+            }
+            else
+            {
+                nextSongSequential();
+            }
         }
         else if (userInput == 'k' || userInput == 'K')
         {
-            isShuffleMode = !isShuffleMode;
+            while(pthread_mutex_trylock(&mutexQueue) == 0);
+            changePlayingMode();
+            pthread_mutex_unlock(&mutexQueue);
         }
         else if (userInput == 'q' || userInput == 'Q')
         {
