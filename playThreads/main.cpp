@@ -38,7 +38,6 @@ bool isToRenderUI = false;
 bool isPaused = false;
 bool isUISetted = false;
 
-
 /*Vector onde as músicas estão armazenadas*/
 vector<Songs> songQueue;
 vector<bool> wasTheSongPlayed;
@@ -110,11 +109,27 @@ void drawWinQueueBox()
 }
 
 /*Funções que ajudam ao funcionamento da reprodução das faixas*/
+void makeAllSongsAvailable() 
+{
+    for (int i = 0; i < songQueue.size(); i ++) 
+    {
+        songQueue.at(i).wasPlayed = false;
+    }
+}
+
 void playSong()
 { //Play na execução da faixa
     while (pthread_mutex_trylock(&mutexIsPaused) == 0)
         ; //Trava modificação no bool isPaused
+
+    if (!songQueue.empty() && actualMusic == -1) //caso tenha finalizado a execução de todas as músicas e o usuário queira executar novamente
+    {
+        makeAllSongsAvailable();
+        actualMusic = 0;
+    }
+
     isPaused = false;
+
     pthread_mutex_unlock(&mutexIsPaused); //Libera isPaused para modificações
 }
 
