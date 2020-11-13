@@ -159,16 +159,9 @@ void addSongsToWinQueue() //Adiciona as músicas que estão no vector songsQueue
 
         mvwprintw(winQueue, 2 + i, duracaoPosition + 2, "%d", songQueue[i].seconds);
     }
-    wrefresh(winQueue);
 
-    if (!songQueue.empty())
-    { //Coloca a música disponível a ser tocada como a música 0
-        changeActualMusic();
-    }
-    else
-    {
-        changeActualMusic();
-    }
+    wrefresh(winQueue);
+    changeActualMusic();
 }
 
 void addSong() //Pede informações sobre a música nova a ser adicionada na songsQueue
@@ -208,7 +201,7 @@ void addSong() //Pede informações sobre a música nova a ser adicionada na son
     while (pthread_mutex_trylock(&mutexIsPaused) == 0)
         ; //bloqueia o acesso a modifição em isPaused
     while (pthread_mutex_trylock(&mutexIsToRenderUI) == 0)
-        ;
+        ; //bloqueia o acesso a modificação em isToRenderUI
 
     songQueue.push_back(song);
     if (songQueue.size() == 1) //para dar play na faixa disponível somente se a última música adicionada for a primeira disponível a execução
@@ -223,14 +216,14 @@ void addSong() //Pede informações sobre a música nova a ser adicionada na son
     pthread_cond_signal(&UI_SIGNAL);      //envia sinal para atualizar a UI
     pthread_mutex_unlock(&mutexQueue);    //libera o mutex de modificação a songQueue
     pthread_mutex_unlock(&mutexIsPaused); //libera o mutex de modificação a isPaused
-    pthread_mutex_unlock(&mutexIsToRenderUI);
+    pthread_mutex_unlock(&mutexIsToRenderUI); //libera o mutex de modificação a isToRenderUI
 }
 
-void changePlayingMode()
+void changePlayingMode() //alterna entre modo sequencial ou modo aleatório
 {
     if (isShuffleMode) 
     {
-        for (int i = actualMusic + 1; i < songQueue.size(); i++) //faz com que na mudança aleatório -> sequencial as próximas à música atual toque.
+        for (int i = actualMusic + 1; i < songQueue.size(); i++) //faz com que na mudança aleatório -> sequencial as músicas com indíce maior que a atual fiquem com o booleano .wasPlayed verdadeiro
         {
             songQueue.at(i).wasPlayed = false;
         }
@@ -242,8 +235,8 @@ void changePlayingMode()
 void removeSong() //Remove uma faixa de songQueue
 {
     while (pthread_mutex_trylock(&mutexQueue) == 0); //bloqueia o acesso a modifição em songQueue
-    while (pthread_mutex_trylock(&mutexIsPaused) == 0);
-    while (pthread_mutex_trylock(&mutexIsToRenderUI) == 0);
+    while (pthread_mutex_trylock(&mutexIsPaused) == 0); //bloqueia o acesso a modificação em isPaused
+    while (pthread_mutex_trylock(&mutexIsToRenderUI) == 0); //bloqueia o acesso a modificação em isToRenderUI
     
     int songIndex;
     drawWinActionsBox(false);
@@ -267,9 +260,9 @@ void removeSong() //Remove uma faixa de songQueue
 
     isToRenderUI = true;
 
-    pthread_cond_signal(&UI_SIGNAL); //sinaliza modificação na UI
-    pthread_mutex_unlock(&mutexIsToRenderUI);
+    pthread_mutex_unlock(&mutexIsToRenderUI); //libera o mutex de modificação em songQueue
     pthread_mutex_unlock(&mutexQueue); //libera o mutex de modificação em songQueue
+    pthread_cond_signal(&UI_SIGNAL); //sinaliza modificação na UI
 }
 
 void nextSongSequential() //avança para a próxima música de maneira sequencial
@@ -278,9 +271,7 @@ void nextSongSequential() //avança para a próxima música de maneira sequencia
         ; //bloqueia o acesso a modificação em songQueue
     while (pthread_mutex_trylock(&mutexExecutionTime) == 0)
         ; //bloqueia o acesso a modificação em executionTime
-    while (pthread_mutex_trylock(&mutexIsToRenderUI) == 0);
-    while (pthread_mutex_trylock(&mutexIsToRenderUI) == 0)
-        ;
+    while (pthread_mutex_trylock(&mutexIsToRenderUI) == 0); //bloqueia o acesso a modificação em isToRenderUI
 
     if (actualMusic < (songQueue.size() - 1) && actualMusic != -1)
     {
@@ -297,20 +288,20 @@ void nextSongSequential() //avança para a próxima música de maneira sequencia
 
     isToRenderUI = true;
 
-    pthread_cond_signal(&UI_SIGNAL); //sinaliza modificação na UI
-    pthread_mutex_unlock(&mutexIsToRenderUI);
+    pthread_mutex_unlock(&mutexIsToRenderUI); //libera o mutex de modificação em isToRenderUI
     pthread_mutex_unlock(&mutexQueue);         //libera o mutex de modificação em songQueue
     pthread_mutex_unlock(&mutexExecutionTime); //libera o mutex de modificação em executionTime
+    pthread_cond_signal(&UI_SIGNAL); //sinaliza modificação na UI
 }
 
-int findNextAvailableSound(int index) {
-    int auxCount = 0;
+int findNextAvailableSound(int index) { //função que encontra um som do vector que está disponível para ser tocado
+    int auxCount = 0; 
     index++;
     while (auxCount < songQueue.size())
     {
         if (!songQueue.at(index).wasPlayed)
         {
-            return index;
+            return index; //posição da música disponível a ser tocada
         } 
         else 
         {
@@ -318,35 +309,35 @@ int findNextAvailableSound(int index) {
             index = (index + 1) % songQueue.size();
         }
     }
-    return -1;
+    return -1; //caso nenhuma música esteja disponível
 }
 
 void nextSongShuffle() //avança para a próxima música de maneira aleatória
 {
-    //if (quantidadeDeMusicasTocadas < songQueue.size())
+    
     while (pthread_mutex_trylock(&mutexQueue) == 0); //bloqueia o acesso a modificação em songQueue
     while (pthread_mutex_trylock(&mutexExecutionTime) == 0); //bloqueia o acesso a modificação em executionTime
-    while (pthread_mutex_trylock(&mutexIsToRenderUI) == 0);
+    while (pthread_mutex_trylock(&mutexIsToRenderUI) == 0); //bloqueia o acesso a modificação em isToRendeUI
 
-    int nextIndexSong = rand() % songQueue.size();
-    if (songQueue.at(nextIndexSong).wasPlayed)
+    int nextIndexSong = rand() % songQueue.size(); //procura um index aleatório que seja do tamanho do vector songQueue
+    if (songQueue.at(nextIndexSong).wasPlayed) //checa se a música daquele index já foi tocado
     {
-        nextIndexSong = findNextAvailableSound(nextIndexSong);
+        nextIndexSong = findNextAvailableSound(nextIndexSong); //caso a música tenha sido tocada, procura a mais perto que esteja disponível
     }
 
-    actualMusic = nextIndexSong;
-    executionTime = 0;
+    actualMusic = nextIndexSong; //coloca a música atual para o indíce achado. Caso nenhuma música esteja disponível, recebe -1
+    executionTime = 0; //limpa o tempo de execução que estava sendo incrementado
 
     if (actualMusic != -1)
     {
-        songQueue.at(actualMusic).wasPlayed = true;
+        songQueue.at(actualMusic).wasPlayed = true; //coloca a música atual como tocada
     }
 
-    isToRenderUI = true;
+    isToRenderUI = true; //coloca para a flag de redenrizar a UI como true
 
-    pthread_mutex_unlock(&mutexIsToRenderUI);
+    pthread_mutex_unlock(&mutexIsToRenderUI); //libera o mutex de modificação em isToRenderUI
     pthread_mutex_unlock(&mutexQueue);         //libera o mutex de modificação em songQueue
-    pthread_mutex_unlock(&mutexExecutionTime);
+    pthread_mutex_unlock(&mutexExecutionTime); //libera o mutex de modificação em executionTime
     pthread_cond_signal(&UI_SIGNAL); //sinaliza modificação na UI
 }
 
@@ -363,6 +354,7 @@ void progressionBar() //realiza a progressão da barra de execução da música
     {
         totalSeconds = songQueue.empty() ? 0 : songQueue.at(actualMusic).totalSeconds(); //pega o tempo total da música que está liberada para ser executada
     }
+    
 
     mvwhline(winPlaying, 1, 30, ACS_CKBOARD, int(((float)executionTime / totalSeconds) * (numColumns - 20))); //desenha a linha da faixa disponível para ser executada
     wrefresh(winPlaying);
@@ -426,7 +418,7 @@ void *userInterface(void *arg) //responsável por montar e atualizar a UI
     }
 }
 
-void *playingTime(void *arg)
+void *playingTime(void *arg) //responsável por atualizar o tempo de execução da música
 {
     while (true)
     {
@@ -437,39 +429,39 @@ void *playingTime(void *arg)
             executionTime++; //precisa atualizar a UI
         }
 
-        sleep(1);
+        sleep(1); //espera um segundo para poder seguir com a função, isso faz com que o contador aumente a cada segundo
 
-        while (pthread_mutex_trylock(&mutexIsToRenderUI) == 0)
+        while (pthread_mutex_trylock(&mutexIsToRenderUI) == 0) //bloqueia o mutex relacionado ao bool isToRenderUI
             ;
 
-        isToRenderUI = true;
+        isToRenderUI = true; 
 
-        pthread_mutex_unlock(&mutexIsToRenderUI);
-        pthread_cond_signal(&UI_SIGNAL);
         pthread_mutex_unlock(&mutexExecutionTime); //desbloqueia modificação em executionTime
+        pthread_mutex_unlock(&mutexIsToRenderUI); //desbloqueia o mutex relacionado ao bool isToRenderUI
+        pthread_cond_signal(&UI_SIGNAL); //Manda sinal para atualizar a UI 
     }
 }
 
-void *changeSong(void *arg)
+void *changeSong(void *arg) //responsável por mudar a faixa que está sendo executada
 {
-    while (true) //??Checar se já foram todas tocadas??? ???Teria que mudar o número quando passasse de aleatório para não aleatório né bicha????
+    while (true) 
     {
-        if (actualMusic != -1 && !songQueue.empty() && executionTime == songQueue.at(actualMusic).totalSeconds())
+        if (actualMusic != -1 && !songQueue.empty() && executionTime == songQueue.at(actualMusic).totalSeconds()) //checa se tem música para tocar, se songQueue não está vazio e se chegou no tempo limite da música
         {   
             if (!isShuffleMode) 
             {
-                nextSongSequential();
+                nextSongSequential(); //chama a função que realiza a troca de música de forma sequencial
             }
             else
             {
-                nextSongShuffle();
+                nextSongShuffle(); //chama a função que realiza a troca de música de forma aleatória
             }
             
-            while (pthread_mutex_trylock(&mutexIsToRenderUI) == 0)
+            while (pthread_mutex_trylock(&mutexIsToRenderUI) == 0) //bloqueia o mutex relacionado ao bool isToRenderUI
                 ;
             isToRenderUI = true;
-            pthread_mutex_unlock(&mutexIsToRenderUI);
-            pthread_cond_signal(&UI_SIGNAL);
+            pthread_mutex_unlock(&mutexIsToRenderUI); //desbloqueia o mutex relacionado ao bool isToRenderUI
+            pthread_cond_signal(&UI_SIGNAL); //Manda sinal para atualizar a UI
         }
     }
 }
